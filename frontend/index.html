@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CineMatch — Recommandations Films</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Sans:wght@300;400;500&display=swap"/>
+<style>
+/* ─── Variables ─────────────────────────────────────────── */
+:root {
+  --bg:      #0a0a0f;
+  --surface: #12121a;
+  --card:    #1a1a26;
+  --border:  #2a2a3a;
+  --gold:    #d4a853;
+  --gold2:   #f0c97a;
+  --text:    #e8e4dc;
+  --muted:   #7a7a95;
+  --accent:  #7c5cbf;
+  --red:     #c94040;
+  --radius:  12px;
+  --api:     http://localhost:5000;
+}
+
+/* ─── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── Noise overlay ──────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 0;
+  opacity: .4;
+}
+
+/* ─── Header ─────────────────────────────────────────────── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,10,15,.92);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 2rem;
+  display: flex; align-items: center; gap: 2rem;
+  height: 70px;
+}
+.logo {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem; font-weight: 900;
+  color: var(--gold);
+  letter-spacing: -.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.logo span { color: var(--text); }
+
+/* ─── Search bar ─────────────────────────────────────────── */
+.search-wrap {
+  flex: 1;
+  position: relative;
+  max-width: 560px;
+}
+.search-input {
+  width: 100%;
+  padding: .65rem 1.2rem .65rem 3rem;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 50px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .95rem;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s;
+}
+.search-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(212,168,83,.12);
+}
+.search-icon {
+  position: absolute; left: 1rem; top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted); pointer-events: none;
+  font-size: 1.1rem;
+}
+.autocomplete-list {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  z-index: 200;
+  display: none;
+}
+.autocomplete-list.open { display: block; }
+.ac-item {
+  padding: .6rem 1.1rem;
+  cursor: pointer;
+  font-size: .9rem;
+  transition: background .15s;
+}
+.ac-item:hover { background: var(--border); color: var(--gold); }
+
+/* ─── User badge ─────────────────────────────────────────── */
+.user-area {
+  display: flex; align-items: center; gap: .6rem;
+  margin-left: auto; flex-shrink: 0;
+}
+.user-select {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 50px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: .85rem;
+  padding: .4rem .9rem;
+  outline: none;
+  cursor: pointer;
+}
+.mode-badge {
+  font-size: .72rem; font-weight: 500;
+  padding: .25rem .65rem;
+  border-radius: 50px;
+  text-transform: uppercase; letter-spacing: .08em;
+  background: rgba(124,92,191,.2);
+  color: #a68fdf;
+  border: 1px solid rgba(124,92,191,.35);
+}
+.mode-badge.popularity { background: rgba(212,168,83,.15); color: var(--gold); border-color: rgba(212,168,83,.3); }
+
+/* ─── Hero banner ────────────────────────────────────────── */
+.hero {
+  position: relative;
+  padding: 4rem 2rem 3rem;
+  text-align: center;
+  overflow: hidden;
+}
+.hero-glow {
+  position: absolute; top: -60px; left: 50%; transform: translateX(-50%);
+  width: 700px; height: 300px;
+  background: radial-gradient(ellipse, rgba(212,168,83,.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--text);
+}
+.hero h1 em { font-style: normal; color: var(--gold); }
+.hero p {
+  margin-top: .8rem;
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 300;
+}
+
+/* ─── Section ────────────────────────────────────────────── */
+.section { padding: 1.5rem 2rem 3rem; position: relative; z-index: 1; }
+.section-header {
+  display: flex; align-items: baseline; gap: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .8rem;
+}
+.section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.4rem; font-weight: 700;
+  color: var(--text);
+}
+.section-sub {
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+/* ─── Movie Grid ─────────────────────────────────────────── */
+.movies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.2rem;
+}
+
+/* ─── Movie Card ─────────────────────────────────────────── */
+.movie-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .2s, border-color .2s, box-shadow .2s;
+  position: relative;
+}
+.movie-card:hover {
+  transform: translateY(-5px);
+  border-color: var(--gold);
+  box-shadow: 0 12px 40px rgba(212,168,83,.12);
+}
+.card-poster {
+  width: 100%; aspect-ratio: 2/3;
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; position: relative;
+}
+.poster-placeholder {
+  font-size: 3.5rem; opacity: .25;
+}
+.card-poster-letter {
+  font-family: 'Playfair Display', serif;
+  font-size: 4rem; font-weight: 900;
+  color: var(--gold); opacity: .2;
+  user-select: none;
+}
+.poster-gradient {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, transparent 50%, rgba(10,10,15,.9) 100%);
+}
+.card-body { padding: .85rem; }
+.card-title {
+  font-family: 'Playfair Display', serif;
+  font-size: .95rem; font-weight: 700;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-genres {
+  margin-top: .3rem;
+  font-size: .72rem;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-meta {
+  margin-top: .6rem;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-rating {
+  display: flex; align-items: center; gap: .25rem;
+  font-size: .8rem; font-weight: 500;
+  color: var(--gold);
+}
+.card-sim {
+  font-size: .72rem; font-weight: 500;
+  color: var(--accent);
+  background: rgba(124,92,191,.15);
+  border-radius: 50px;
+  padding: .15rem .5rem;
+}
+.card-score {
+  font-size: .72rem; color: var(--muted);
+}
+
+/* ─── Search results section ─────────────────────────────── */
+.ref-card {
+  background: linear-gradient(135deg, var(--card) 0%, rgba(212,168,83,.06) 100%);
+  border: 1px solid rgba(212,168,83,.3);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.5rem;
+  margin-bottom: 1.8rem;
+  display: flex; gap: 1.5rem; align-items: flex-start;
+}
+.ref-icon { font-size: 2.5rem; flex-shrink: 0; }
+.ref-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.3rem; font-weight: 700;
+  color: var(--gold);
+}
+.ref-genres { font-size: .82rem; color: var(--muted); margin-top: .2rem; }
+.ref-overview { font-size: .85rem; margin-top: .5rem; color: #b0acca; line-height: 1.6; }
+
+/* ─── Loader ─────────────────────────────────────────────── */
+.loader-wrap {
+  display: flex; align-items: center; justify-content: center;
+  gap: .6rem; padding: 3rem; color: var(--muted);
+}
+.spinner {
+  width: 22px; height: 22px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Empty state ────────────────────────────────────────── */
+.empty { text-align: center; padding: 3rem; color: var(--muted); }
+.empty-icon { font-size: 3rem; margin-bottom: .8rem; }
+
+/* ─── Stars ─────────────────────────────────────────────── */
+.stars { letter-spacing: .05em; font-size: .9rem; }
+
+/* ─── Responsive ─────────────────────────────────────────── */
+@media (max-width: 640px) {
+  header { flex-wrap: wrap; height: auto; padding: .8rem 1rem; gap: .8rem; }
+  .user-area { width: 100%; justify-content: flex-end; }
+  .movies-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+</style>
+</head>
+<body>
+
+<!-- ─── Header ─────────────────────────────────────── -->
+<header>
+  <div class="logo">Cine<span>Match</span></div>
+
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input
+      id="searchInput"
+      class="search-input"
+      type="text"
+      placeholder="Rechercher un film…"
+      autocomplete="off"
+    />
+    <div id="acList" class="autocomplete-list"></div>
+  </div>
+
+  <div class="user-area">
+    <select id="userSelect" class="user-select" title="Simuler un utilisateur">
+      <option value="">👤 Visiteur</option>
+      <option value="1">Utilisateur #1</option>
+      <option value="5">Utilisateur #5</option>
+      <option value="42">Utilisateur #42</option>
+      <option value="100">Utilisateur #100</option>
+      <option value="250">Utilisateur #250</option>
+    </select>
+    <span id="modeBadge" class="mode-badge popularity">Popularité</span>
+  </div>
+</header>
+
+<!-- ─── Hero ────────────────────────────────────────── -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <h1>Votre prochaine<br/><em>obsession cinéma</em></h1>
+  <p>Recommandations personnalisées par IA • Basées sur vos goûts</p>
+</section>
+
+<!-- ─── Main content ─────────────────────────────────── -->
+<main id="mainContent">
+  <!-- Injecté dynamiquement -->
+</main>
+
+<script>
+const API = 'http://localhost:5000/api';
+
+// ── State ───────────────────────────────────────────
+let currentUserId = null;
+let searchTimeout = null;
+let acTitles = [];
+
+// ── Utils ───────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const esc = s => s.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function stars(n) {
+  const full = Math.round(n / 2);
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
+}
+
+function randGradient(title) {
+  const h = [...title].reduce((a,c) => a + c.charCodeAt(0), 0) % 360;
+  return `linear-gradient(135deg, hsl(${h},25%,14%) 0%, hsl(${(h+40)%360},18%,10%) 100%)`;
+}
+
+function renderCard(m) {
+  const letter = (m.title || '?')[0].toUpperCase();
+  const sim = m.similarity != null
+    ? `<span class="card-sim">${Math.round(m.similarity*100)}% similaire</span>`
+    : `<span class="card-score">Score ${m.score?.toFixed(2) ?? ''}</span>`;
+  return `
+<div class="movie-card" onclick="searchMovie('${esc(m.title)}')">
+  <div class="card-poster" style="background:${randGradient(m.title)}">
+    <span class="card-poster-letter">${letter}</span>
+    <div class="poster-gradient"></div>
+  </div>
+  <div class="card-body">
+    <div class="card-title">${esc(m.title)}</div>
+    <div class="card-genres">${esc(m.genres || '—')}</div>
+    <div class="card-meta">
+      <div class="card-rating">
+        <span class="stars">${stars(m.vote_average)}</span>
+        <span>${m.vote_average}</span>
+      </div>
+      ${sim}
+    </div>
+  </div>
+</div>`;
+}
+
+function loader() {
+  return `<div class="loader-wrap"><div class="spinner"></div> Chargement…</div>`;
+}
+
+// ── Load home recommendations ────────────────────────
+async function loadHome() {
+  $('mainContent').innerHTML = `
+<section class="section">
+  <div class="section-header">
+    <span class="section-title">🎬 Films recommandés</span>
+    <span class="section-sub" id="homeSubtitle"></span>
+  </div>
+  <div id="homeGrid">${loader()}</div>
+</section>`;
+
+  const url = currentUserId
+    ? `${API}/home?user_id=${currentUserId}&top_n=20`
+    : `${API}/home?top_n=20`;
+
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    const mode = data.mode;
+
+    // Update badge
+    const badge = $('modeBadge');
+    if (mode === 'collaborative') {
+      badge.textContent = 'Personnalisé';
+      badge.className = 'mode-badge';
+    } else {
+      badge.textContent = 'Popularité';
+      badge.className = 'mode-badge popularity';
+    }
+
+    const subtitles = {
+      popularity:          'Films les plus populaires en ce moment',
+      collaborative:       `Recommandés pour vous (utilisateur #${currentUserId})`,
+      popularity_fallback: 'Pas encore d\'historique — top popularité',
+    };
+    $('homeSubtitle').textContent = subtitles[mode] || '';
+
+    if (!data.movies?.length) {
+      $('homeGrid').innerHTML = `<div class="empty"><div class="empty-icon">🎭</div>Aucun film trouvé.</div>`;
+      return;
+    }
+
+    $('homeGrid').innerHTML = `<div class="movies-grid">${data.movies.map(renderCard).join('')}</div>`;
+  } catch(e) {
+    $('homeGrid').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div>
+      Impossible de contacter l'API.<br/><small>Vérifie que Flask tourne sur port 5000.</small></div>`;
+  }
+}
+
+// ── Search ───────────────────────────────────────────
+async function searchMovie(query) {
+  if (!query.trim()) { loadHome(); return; }
+
+  $('searchInput').value = query;
+  closeAC();
+
+  $('mainContent').innerHTML = `
+<section class="section">
+  <div class="section-header">
+    <span class="section-title">🔍 Résultats pour « ${esc(query)} »</span>
+    <span class="section-sub">Films similaires par contenu</span>
+  </div>
+  <div id="searchResults">${loader()}</div>
+</section>`;
+
+  try {
+    const res  = await fetch(`${API}/search?q=${encodeURIComponent(query)}&top_n=15`);
+    const data = await res.json();
+
+    if (!data.found) {
+      $('searchResults').innerHTML = `
+<div class="empty">
+  <div class="empty-icon">🎭</div>
+  Film « ${esc(query)} » introuvable dans la base TMDB.
+</div>`;
+      return;
+    }
+
+    const r = data.reference;
+    const refBlock = `
+<div class="ref-card">
+  <div class="ref-icon">🎥</div>
+  <div>
+    <div class="ref-title">${esc(r.title)}</div>
+    <div class="ref-genres">${esc(r.genres)}</div>
+    <div class="ref-overview">${esc((r.overview||'').slice(0,200))}${r.overview?.length>200?'…':''}</div>
+  </div>
+</div>`;
+
+    const grid = `<div class="movies-grid">${data.similar.map(renderCard).join('')}</div>`;
+    $('searchResults').innerHTML = refBlock + grid;
+  } catch(e) {
+    $('searchResults').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div>Erreur API.</div>`;
+  }
+}
+
+// ── Autocomplete ─────────────────────────────────────
+async function fetchAC(q) {
+  try {
+    const res  = await fetch(`${API}/movies?q=${encodeURIComponent(q)}&limit=8`);
+    const data = await res.json();
+    acTitles = data.titles || [];
+    renderAC(q);
+  } catch { closeAC(); }
+}
+
+function renderAC(q) {
+  const list = $('acList');
+  if (!acTitles.length) { closeAC(); return; }
+  list.innerHTML = acTitles.map(t =>
+    `<div class="ac-item" onclick="searchMovie('${esc(t)}')">${esc(t)}</div>`
+  ).join('');
+  list.classList.add('open');
+}
+
+function closeAC() { $('acList').classList.remove('open'); }
+
+// ── Events ───────────────────────────────────────────
+$('searchInput').addEventListener('input', e => {
+  const q = e.target.value.trim();
+  clearTimeout(searchTimeout);
+  if (!q) { closeAC(); loadHome(); return; }
+  searchTimeout = setTimeout(() => fetchAC(q), 250);
+});
+
+$('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(searchTimeout);
+    searchMovie($('searchInput').value.trim());
+  }
+  if (e.key === 'Escape') { closeAC(); }
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrap')) closeAC();
+});
+
+$('userSelect').addEventListener('change', e => {
+  currentUserId = e.target.value ? parseInt(e.target.value) : null;
+  $('searchInput').value = '';
+  loadHome();
+});
+
+// ── Init ─────────────────────────────────────────────
+loadHome();
+</script>
+</body>
+</html>
